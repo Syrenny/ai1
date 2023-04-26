@@ -155,7 +155,7 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 
 class MyMetrics():
     loss_history = []
-    def __init__(self, num_classes, threshold=0.5):
+    def __init__(self, num_classes, threshold=0.4):
         self.confusion_matrix = np.zeros((num_classes, num_classes), dtype=int)
         self.error_matrix = pd.DataFrame((np.zeros((num_classes, 4))), columns=['tp', 'fp', 'tn', 'fn'])
         self.threshold = threshold
@@ -172,6 +172,7 @@ class MyMetrics():
             # Counting total number of samples by every class
             # self.num_by_class[label] += 1
             mask = (output[i].cpu().numpy() >= self.threshold).astype(int)
+            print(mask)
             self.confusion_matrix[label] += mask
             self.error_matrix.loc[label, 'tp'] += mask[label]
             self.error_matrix.loc[label, 'fp'] += sum(mask) - mask[label]
@@ -241,7 +242,8 @@ def create_model():
     model.fc = nn.Sequential(
                    nn.Linear(2048, 128),
                    nn.ReLU(inplace=True),
-                   nn.Linear(128, num_classes))
+                   nn.Linear(128, num_classes), 
+                   nn.Softmax(dim=1))
     return model
 
 
@@ -284,7 +286,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = create_model().to(device)
 # Define the loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.fc.parameters(), lr=0.0001, momentum=0.9)
+optimizer = optim.SGD(model.fc.parameters(), lr=0.001, momentum=0.9)
 
 num_epochs = 15
 loss_history = []
