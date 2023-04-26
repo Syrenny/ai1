@@ -1,3 +1,4 @@
+import time
 import torch
 import numpy as np
 import pandas as pd
@@ -167,14 +168,14 @@ class MyMetrics():
         fig.tight_layout()
 
     def update(self, target, output):
-        for i, label in enumerate(target):
+        for i, label in enumerate(target.cpu().numpy()):
             # Counting total number of samples by every class
             # self.num_by_class[label] += 1
             mask = (output[i].cpu().numpy() >= self.threshold).astype(int)
             self.confusion_matrix[label] += mask
-            self.error_matrix[label]['tp'] += mask[label]
-            self.error_matrix[label]['fp'] += sum(mask) - mask[label]
-            self.error_matrix[label]['fn'] += (mask[label] == 0)
+            self.error_matrix.loc[label, 'tp'] += mask[label]
+            self.error_matrix.loc[label, 'fp'] += sum(mask) - mask[label]
+            self.error_matrix.loc[label, 'fn'] += (mask[label] == 0)
             # self.error_matrix[label]['tn'] += len(mask) - 1 - sum(mask) + mask[label]
         
     # macro avg recall
@@ -273,30 +274,33 @@ def test(model, loader, metrics, device):
 
 # Load the dataset
 print("Data loading...")
+start = time.time()
 dataset = ImageFolder('/usr/src/app/simpsons_dataset_kaggle')
 dataset_length = len(dataset)
 name_classes = dataset.classes
 num_classes = len(dataset.classes)
-loader, train_set, test_set = load_dataset(transform, dataset, batch_size=64)
+loader, train_set, test_set = load_dataset(transform, dataset, batch_size=32)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = create_model().to(device)
 # Define the loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.fc.parameters(), lr=0.0001, momentum=0.9)
 
-metrics = MyMetrics(num_classes)
 num_epochs = 15
 loss_history = []
-print('Processing...')
+print('Processing...  {:.2f}s\n'.format(time.time() - start))
 for epoch in range(num_epochs):
+    metrics = MyMetrics(num_classes)
+    start = time.time()
     epoch_loss = train(model, loader, optimizer, criterion, device)
     loss_history.append(epoch_loss)
     test(model, loader, metrics, device)
-    print('Epoch: {0}\nPrecision: {1}\nRecall: {2}\nAccuracy: {3}'.
+    print('Epoch: {}\nPrecision: {:.3f}\nRecall: {:.3f}\nAccuracy: {:.3f}\nTime: {:.2f}s\n'.
           format(epoch + 1, 
                  metrics.precision_by_class().mean(), 
                  metrics.recall_by_class().mean(), 
-                 metrics.accuracy()))
+                 metrics.accuracy(), 
+                 time.time() - start))
     
     
 # Plot the loss history
@@ -304,6 +308,7 @@ plt.plot(loss_history)
 plt.title('Training Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
+metrics.display_heatmap(name_classes)
 plt.show()
 
 
