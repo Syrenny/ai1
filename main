@@ -188,28 +188,11 @@ class MyMetrics():
         return precision_by_class      
         
     def accuracy(self):
-        accuracy_by_class = (self.error_matrix['tp'] +  self.error_matrix['tn']) / 
-        (self.error_matrix['tp'] + self.error_matrix['fn'] + self.error_matrix['tn'] + self.error_matrix['fp'])
+        accuracy_by_class = (self.error_matrix['tp'] +  self.error_matrix['tn']) / (self.error_matrix['tp'] + self.error_matrix['fn'] + self.error_matrix['tn'] + self.error_matrix['fp'])
         return accuracy_by_class.mean()
      
-        
-            
     def classification_report(name_classes):
         report = pd.DataFrame(index=name_classes, columns=['precision', 'recall', 'f1-score'])
-        '''for name, row in (name_classes, self.confusion_matrix):
-            tp = row[i]
-            fn = self.num_by_class[i] - tp
-            fp = sum(row) - tp
-            tn = sum(num_by_class) - tp - fn - fp
-            report[name]['precision'] = tp / (tp + fp) 
-            report[name]['recall'] = tp / (tp + fn)
-        report['f1-score'] = (2 * report['precision'] * report['recall']) / (report['precision'] + report['recall'])
-        macro_avg = pd.Series([report['precision'].mean(), report['recall'].mean(), report['f1-score'].mean()], name='macro_avg')
-        report.append(macro_avg)
-        weights = num_by_class / sum(num_by_class)
-        weighted_avg = pd.Series([(report['precision'] * weights).mean(), (report['recall'] * weights).mean(), (report['f1-score'] * weights).mean()], nanme='weighted_avg')
-        report.append(weighted_avg)
-        return report'''
         report['precision'] = self.precision_by_class()
         report['recall'] = self.recall_by_class()
         report['f1_score'] = (2 * report['precision'] * report['recall']) / (report['precision'] + report['recall'])
@@ -277,7 +260,7 @@ def train(model, loader, optimizer, criterion, device):
     
         
         
-def test(loader, model, metrics, device):
+def test(model, loader, metrics, device):
     for i, (inputs, labels) in enumerate(loader['test']):
         inputs = inputs.to(device)
         labels = labels.to(device)
@@ -289,6 +272,7 @@ def test(loader, model, metrics, device):
 
 
 # Load the dataset
+print("Data loading...")
 dataset = ImageFolder('/usr/src/app/simpsons_dataset_kaggle')
 dataset_length = len(dataset)
 name_classes = dataset.classes
@@ -303,11 +287,16 @@ optimizer = optim.SGD(model.fc.parameters(), lr=0.0001, momentum=0.9)
 metrics = MyMetrics(num_classes)
 num_epochs = 15
 loss_history = []
+print('Processing...')
 for epoch in range(num_epochs):
-    print("epoch ", epoch + 1)
     epoch_loss = train(model, loader, optimizer, criterion, device)
     loss_history.append(epoch_loss)
     test(model, loader, metrics, device)
+    print('Epoch: {0}\nPrecision: {1}\nRecall: {2}\nAccuracy: {3}'.
+          format(epoch + 1, 
+                 metrics.precision_by_class().mean(), 
+                 metrics.recall_by_class().mean(), 
+                 metrics.accuracy()))
     
     
 # Plot the loss history
