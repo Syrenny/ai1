@@ -156,6 +156,7 @@ class MyMetrics():
     loss_history = []
     def __init__(self, num_classes, threshold=0.5):
         self.confusion_matrix = np.zeros((num_classes, num_classes), dtype=int)
+        self.error_matrix = pd.DataFrame((np.zeros((num_classes, 4))), columns=['tp', 'fp', 'tn', 'fn'])
         self.threshold = threshold
         self.num_by_class = np.zeros((num_classes,), dtype=int)
 
@@ -168,20 +169,55 @@ class MyMetrics():
     def update(self, target, output):
         for i, label in enumerate(target):
             # Counting total number of samples by every class
-            self.num_by_class[label] += 1
-            self.confusion_matrix[label] += (output[i].cpu().numpy() >= self.threshold).astype(int)
+            # self.num_by_class[label] += 1
+            mask = (output[i].cpu().numpy() >= self.threshold).astype(int)
+            self.confusion_matrix[label] += mask
+            self.error_matrix[label]['tp'] += mask[label]
+            self.error_matrix[label]['fp'] += sum(mask) - mask[label]
+            self.error_matrix[label]['fn'] += (mask[label] == 0)
+            # self.error_matrix[label]['tn'] += len(mask) - 1 - sum(mask) + mask[label]
+        
+    # macro avg recall
+    def recall_by_class(self):
+        recall_by_class = self.error_matrix['tp'] / (self.error_matrix['tp'] + self.error_matrix['fn'])
+        return recall_by_class
+        
+    # macro avg precision
+    def precision_by_class(self):
+        precision_by_class = self.error_matrix['tp'] / (self.error_matrix['tp'] + self.error_matrix['fp'])
+        return precision_by_class      
+        
+    def accuracy(self):
+        accuracy_by_class = (self.error_matrix['tp'] +  self.error_matrix['tn']) / 
+        (self.error_matrix['tp'] + self.error_matrix['fn'] + self.error_matrix['tn'] + self.error_matrix['fp'])
+        return accuracy_by_class.mean()
+     
+        
             
     def classification_report(name_classes):
         report = pd.DataFrame(index=name_classes, columns=['precision', 'recall', 'f1-score'])
-        for name, row in (name_classes, self.confusion_matrix):
+        '''for name, row in (name_classes, self.confusion_matrix):
             tp = row[i]
             fn = self.num_by_class[i] - tp
             fp = sum(row) - tp
-            tn = fp 
+            tn = sum(num_by_class) - tp - fn - fp
             report[name]['precision'] = tp / (tp + fp) 
             report[name]['recall'] = tp / (tp + fn)
         report['f1-score'] = (2 * report['precision'] * report['recall']) / (report['precision'] + report['recall'])
-        macro_avg = pd.Series(report)
+        macro_avg = pd.Series([report['precision'].mean(), report['recall'].mean(), report['f1-score'].mean()], name='macro_avg')
+        report.append(macro_avg)
+        weights = num_by_class / sum(num_by_class)
+        weighted_avg = pd.Series([(report['precision'] * weights).mean(), (report['recall'] * weights).mean(), (report['f1-score'] * weights).mean()], nanme='weighted_avg')
+        report.append(weighted_avg)
+        return report'''
+        report['precision'] = self.precision_by_class()
+        report['recall'] = self.recall_by_class()
+        report['f1_score'] = (2 * report['precision'] * report['recall']) / (report['precision'] + report['recall'])
+        macro_avg = pd.Series([report['precision'].mean(), report['recall'].mean(), report['f1-score'].mean()], name='macro_avg')
+        report.append(macro_avg)
+        weights = num_by_class / sum(num_by_class)
+        weighted_avg = pd.Series([(report['precision'] * weights).mean(), (report['recall'] * weights).mean(), (report['f1-score'] * weights).mean()], nanme='weighted_avg')
+        report.append(weighted_avg)
         return report
 
 # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
@@ -225,21 +261,26 @@ def create_model():
     return model
 
 
-def train(model, loader, optimizer, criterion):
+def train(model, loader, optimizer, criterion, device):
+    running_loss = 0
     for i, (inputs, labels) in enumerate(loader['train']):
-        inputs = inputs.to(self.device)
-        labels = labels.to(self.device)
+        inputs = inputs.to(device)
+        labels = labels.to(device)
         outputs = model(inputs)
         optimizer.zero_grad()
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+        # running_loss += loss.item() * inputs.size(0)
+        running_loss += loss.item()
+    return running_loss / len(loader['train'])
+    
         
         
-def test(loader, model, metrics):
+def test(loader, model, metrics, device):
     for i, (inputs, labels) in enumerate(loader['test']):
-        inputs = inputs.to(self.device)
-        labels = labels.to(self.device)
+        inputs = inputs.to(device)
+        labels = labels.to(device)
         outputs = model(inputs)
         model.eval()
         with torch.no_grad():
@@ -248,11 +289,11 @@ def test(loader, model, metrics):
 
 
 # Load the dataset
-dataset = ImageFolder(dataset_folder)
+dataset = ImageFolder('/usr/src/app/simpsons_dataset_kaggle')
 dataset_length = len(dataset)
 name_classes = dataset.classes
 num_classes = len(dataset.classes)
-loader, train_set, test_set = load_dataset(transform, dataset, 64)
+loader, train_set, test_set = load_dataset(transform, dataset, batch_size=64)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = create_model().to(device)
 # Define the loss function and optimizer
@@ -261,14 +302,13 @@ optimizer = optim.SGD(model.fc.parameters(), lr=0.0001, momentum=0.9)
 
 metrics = MyMetrics(num_classes)
 num_epochs = 15
+loss_history = []
 for epoch in range(num_epochs):
-    train(model, loader, optimizer, criterion)
-    test(model, loader, metrics)
+    print("epoch ", epoch + 1)
+    epoch_loss = train(model, loader, optimizer, criterion, device)
+    loss_history.append(epoch_loss)
+    test(model, loader, metrics, device)
     
-    
-
-
-
     
 # Plot the loss history
 plt.plot(loss_history)
@@ -277,11 +317,5 @@ plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.show()
 
-# Plot the accuracy history
-plt.plot(accuracy_history)
-plt.title('Training Accuracy')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.show()
 
 
