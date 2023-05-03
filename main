@@ -20,7 +20,7 @@ from torchmetrics import Precision, StatScores
 from torchmetrics.classification import MulticlassStatScores
 from torchmetrics import MetricCollection
 from torchmetrics.classification import MulticlassAccuracy, MulticlassPrecision, MulticlassRecall, MulticlassFBetaScore, MulticlassConfusionMatrix
-
+from torchmetrics.functional.classification import multiclass_confusion_matrix, multiclass_stat_scores
 
 
 class MyDataset(Dataset):
@@ -36,186 +36,33 @@ class MyDataset(Dataset):
 
   def __len__(self):
       return len(self.subset)
-
-
-'''def heatmap(data, row_labels, col_labels, ax=None,
-            cbar_kw=None, cbarlabel="", **kwargs):
-  """
-  Create a heatmap from a numpy array and two lists of labels.
-
-  Parameters
-  ----------
-  data
-      A 2D numpy array of shape (M, N).
-  row_labels
-      A list or array of length M with the labels for the rows.
-  col_labels
-      A list or array of length N with the labels for the columns.
-  ax
-      A `matplotlib.axes.Axes` instance to which the heatmap is plotted.  If
-      not provided, use current axes or create a new one.  Optional.
-  cbar_kw
-      A dictionary with arguments to `matplotlib.Figure.colorbar`.  Optional.
-  cbarlabel
-      The label for the colorbar.  Optional.
-  **kwargs
-      All other arguments are forwarded to `imshow`.
-  """
-
-  if ax is None:
-      ax = plt.gca()
-
-  if cbar_kw is None:
-      cbar_kw = {}
-
-  # Plot the heatmap
-  im = ax.imshow(data, **kwargs)
-
-  # Create colorbar
-  cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
-  cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
-
-  # Show all ticks and label them with the respective list entries.
-  ax.set_xticks(np.arange(data.shape[1]), labels=col_labels)
-  ax.set_yticks(np.arange(data.shape[0]), labels=row_labels)
-
-  # Let the horizontal axes labeling appear on top.
-  ax.tick_params(top=True, bottom=False,
-                  labeltop=True, labelbottom=False)
-
-  # Rotate the tick labels and set their alignment.
-  plt.setp(ax.get_xticklabels(), rotation=-30, ha="right",
-            rotation_mode="anchor")
-
-  # Turn spines off and create white grid.
-  ax.spines[:].set_visible(False)
-
-  ax.set_xticks(np.arange(data.shape[1]+1)-.5, minor=True)
-  ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
-  ax.grid(which="minor", color="w", linestyle='-', linewidth=3)
-  ax.tick_params(which="minor", bottom=False, left=False)
-
-  return im, cbar
-
-
-def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
-                     textcolors=("black", "white"),
-                     threshold=None, **textkw):
-  """
-  A function to annotate a heatmap.
-
-  Parameters
-  ----------
-  im
-      The AxesImage to be labeled.
-  data
-      Data used to annotate.  If None, the image's data is used.  Optional.
-  valfmt
-      The format of the annotations inside the heatmap.  This should either
-      use the string format method, e.g. "$ {x:.2f}", or be a
-      `matplotlib.ticker.Formatter`.  Optional.
-  textcolors
-      A pair of colors.  The first is used for values below a threshold,
-      the second for those above.  Optional.
-  threshold
-      Value in data units according to which the colors from textcolors are
-      applied.  If None (the default) uses the middle of the colormap as
-      separation.  Optional.
-  **kwargs
-      All other arguments are forwarded to each call to `text` used to create
-      the text labels.
-  """
-
-  if not isinstance(data, (list, np.ndarray)):
-      data = im.get_array()
-
-  # Normalize the threshold to the images color range.
-  if threshold is not None:
-      threshold = im.norm(threshold)
-  else:
-      threshold = im.norm(data.max())/2.
-
-  # Set default alignment to center, but allow it to be
-  # overwritten by textkw.
-  kw = dict(horizontalalignment="center",
-            verticalalignment="center")
-  kw.update(textkw)
-
-  # Get the formatter in case a string is supplied
-  if isinstance(valfmt, str):
-      valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
-
-  # Loop over the data and create a `Text` for each "pixel".
-  # Change the text's color depending on the data.
-  texts = []
-  for i in range(data.shape[0]):
-    for j in range(data.shape[1]):
-      kw.update(color=textcolors[int(im.norm(data[i, j]) > threshold)])
-      text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
-      texts.append(text)
-  return texts
-'''
-
-'''class Metrics:
-    def __init__(self, num_classes, device):
-        self.metric_collection = MetricCollection({
-            "Accuracy": MulticlassAccuracy(num_classes=num_classes, average='macro'),
-            "Precision": MulticlassPrecision(num_classes=num_classes, average='macro'),
-            "Recall": MulticlassRecall(num_classes=num_classes, average='macro'),
-            "CM": MulticlassConfusionMatrix(num_classes=num_classes)
-        }).to(device)
     
-    def update(self, preds, target):
-        return self.metric_collection(preds, target)
-    
-    def reset_metrics(self):
-        self.metric_collection.reset()
-        
-    def display_confusion_matrix(self, name_classes):
-        CM = self.metric_collection["CM"].cpu().numpy()
-        fig, ax = plt.subplots(1, 1, figsize=(22, 15))
-        im, cbar = heatmap(CM, name_classes, name_classes, ax=ax, cmap="YlGn", cbarlabel="bla")
-        texts = annotate_heatmap(im, valfmt="{x:.1f}")
-        fig.tight_layout()
-        
-    def accuracy(self):
-        return self.metric_collection["Accuracy"].compute().cpu().numpy()
-    
-    def recall(self):
-        return self.metric_collection["Recall"].compute().cpu().numpy()
-    
-    def precision(self):
-        return self.metric_collection["Precision"].compute().cpu().numpy()'''
-        
     
 class Metrics:
     def __init__(self, num_classes, device):
-        self.metric_collection = MetricCollection({
-            "Accuracy": MulticlassAccuracy(num_classes=num_classes, average=None),
-            "Precision": MulticlassPrecision(num_classes=num_classes, average=None),
-            "Recall": MulticlassRecall(num_classes=num_classes, average=None)
-        }).to(device)
+        self.stat_scores = torch.DoubleTensor(5, num_classes).zero_().to(device)
         self.confusion_matrix = torch.DoubleTensor(num_classes, num_classes).zero_().to(device)
         self.num_classes = num_classes
     
     def update(self, preds, target):
-        print("preds", preds)
-        print("target", target)
         cm = multiclass_confusion_matrix(preds, target, num_classes=self.num_classes)
         self.confusion_matrix = self.confusion_matrix.add(cm)
-        return self.metric_collection(preds, target)
-    
-    def reset_metrics(self):
-        self.metric_collection.reset()
-    
+        ss = multiclass_stat_scores(preds, target, self.num_classes, average=None)
+        self.stat_scores = self.stat_scores.add(ss)
+        
     def accuracy(self):
-        return self.metric_collection["Accuracy"].compute().cpu().numpy()
+        # (tp + tn) / (tp + tn + fp + fn)
+        numer = self.stat_scores[0].add(self.stat_scores[2])
+        denom = self.stat_scores.sum(1)
+        return numer.div(denom.sub(self.stat_scores[4])) # sub support 
     
     def recall(self):
-        return self.metric_collection["Recall"].compute().cpu().numpy()
+        # tp / (tp + fn)
+        return self.stat_scores[0].div(self.stat_scores[0].add(self.stat_scores[3]))
     
     def precision(self):
-        return self.metric_collection["Precision"].compute().cpu().numpy()
+        # tp / (tp + fp)
+        return self.stat_scores[0].div(self.stat_scores[0].add(self.stat_scores[1]))
     
     
 # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
@@ -282,8 +129,6 @@ def test(model, loader, metrics, device):
         labels = labels.to(device)
         outputs = model(inputs)
         _, preds = torch.max(outputs, 1)
-        print("outputs", preds)
-        print("inputs", labels)
         m = 0
         model.eval()
         with torch.no_grad():
@@ -319,15 +164,12 @@ for epoch in range(num_epochs):
     epoch_loss = train(model, loader, optimizer, criterion, device)
     loss_history.append(epoch_loss)
     metrics_result = test(model, loader, metrics, device)
-    '''print('Epoch: {}\nPrecision: {:.5f}\nRecall: {:.5f}\nAccuracy: {:.5f}\nTime: {:.2f}s\n'.
+    print('Epoch: {}\nPrecision: {:.5f}\nRecall: {:.5f}\nAccuracy: {:.5f}\nTime: {:.2f}s\n'.
           format(epoch + 1, 
-                 metrics.precision(), 
-                 metrics.recall(), 
-                 metrics.accuracy(), 
-                 time.time() - start))'''
-    print("precision", metrics.precision()) 
-    print("recall", metrics.recall())
-    print("accuracy", metrics.accuracy())
+                 metrics.precision().cpu().numpy().mean(), 
+                 metrics.recall().cpu().numpy().mean(), 
+                 metrics.accuracy().cpu().numpy().mean(), 
+                 time.time() - start))
     if epoch != num_epochs - 1:
         metrics.reset_metrics()
     
