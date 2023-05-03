@@ -38,7 +38,7 @@ class MyDataset(Dataset):
       return len(self.subset)
 
 
-def heatmap(data, row_labels, col_labels, ax=None,
+'''def heatmap(data, row_labels, col_labels, ax=None,
             cbar_kw=None, cbarlabel="", **kwargs):
   """
   Create a heatmap from a numpy array and two lists of labels.
@@ -154,66 +154,14 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
       text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
       texts.append(text)
   return texts
-
-
-'''class MyMetrics():
-    loss_history = []
-    def __init__(self, num_classes, threshold=0.4):
-        self.confusion_matrix = np.zeros((num_classes, num_classes), dtype=int)
-        self.error_matrix = pd.DataFrame((np.zeros((num_classes, 4))), columns=['tp', 'fp', 'tn', 'fn'])
-        self.threshold = threshold
-        self.num_by_class = np.zeros((num_classes,), dtype=int)
-
-    def display_heatmap(self, name_classes):
-        fig, ax = plt.subplots(1, 1, figsize=(22, 15))
-        im, cbar = heatmap(self.confusion_matrix, name_classes, name_classes, ax=ax, cmap="YlGn", cbarlabel="bla")
-        texts = annotate_heatmap(im, valfmt="{x:.1f}")
-        fig.tight_layout()
-
-    def update(self, target, output):
-        for i, label in enumerate(target.cpu().numpy()):
-            # Counting total number of samples by every class
-            # self.num_by_class[label] += 1
-            mask = (output[i].cpu().numpy() >= self.threshold).astype(int)
-            self.confusion_matrix[label] += mask
-            self.error_matrix.loc[label, 'tp'] += mask[label]
-            self.error_matrix.loc[label, 'fp'] += sum(mask) - mask[label]
-            self.error_matrix.loc[label, 'fn'] += (mask[label] == 0)
-            # self.error_matrix[label]['tn'] += len(mask) - 1 - sum(mask) + mask[label]
-        
-    # macro avg recall
-    def recall_by_class(self):
-        recall_by_class = self.error_matrix['tp'] / (self.error_matrix['tp'] + self.error_matrix['fn'])
-        return recall_by_class
-        
-    # macro avg precision
-    def precision_by_class(self):
-        precision_by_class = self.error_matrix['tp'] / (self.error_matrix['tp'] + self.error_matrix['fp'])
-        return precision_by_class      
-        
-    def accuracy(self):
-        accuracy_by_class = (self.error_matrix['tp'] +  self.error_matrix['tn']) / (self.error_matrix['tp'] + self.error_matrix['fn'] + self.error_matrix['tn'] + self.error_matrix['fp'])
-        return accuracy_by_class.mean()
-     
-    def classification_report(name_classes):
-        report = pd.DataFrame(index=name_classes, columns=['precision', 'recall', 'f1-score'])
-        report['precision'] = self.precision_by_class()
-        report['recall'] = self.recall_by_class()
-        report['f1_score'] = (2 * report['precision'] * report['recall']) / (report['precision'] + report['recall'])
-        macro_avg = pd.Series([report['precision'].mean(), report['recall'].mean(), report['f1-score'].mean()], name='macro_avg')
-        report.append(macro_avg)
-        weights = num_by_class / sum(num_by_class)
-        weighted_avg = pd.Series([(report['precision'] * weights).mean(), (report['recall'] * weights).mean(), (report['f1-score'] * weights).mean()], nanme='weighted_avg')
-        report.append(weighted_avg)
-        return report
 '''
 
-class MyMetrics:
+'''class Metrics:
     def __init__(self, num_classes, device):
         self.metric_collection = MetricCollection({
-            "Accuracy": MulticlassAccuracy(num_classes, average=None),
-            "Precision": MulticlassPrecision(num_classes=num_classes, average=None),
-            "Recall": MulticlassRecall(num_classes=num_classes, average=None),
+            "Accuracy": MulticlassAccuracy(num_classes=num_classes, average='macro'),
+            "Precision": MulticlassPrecision(num_classes=num_classes, average='macro'),
+            "Recall": MulticlassRecall(num_classes=num_classes, average='macro'),
             "CM": MulticlassConfusionMatrix(num_classes=num_classes)
         }).to(device)
     
@@ -237,7 +185,38 @@ class MyMetrics:
         return self.metric_collection["Recall"].compute().cpu().numpy()
     
     def precision(self):
+        return self.metric_collection["Precision"].compute().cpu().numpy()'''
+        
+    
+class Metrics:
+    def __init__(self, num_classes, device):
+        self.metric_collection = MetricCollection({
+            "Accuracy": MulticlassAccuracy(num_classes=num_classes, average=None),
+            "Precision": MulticlassPrecision(num_classes=num_classes, average=None),
+            "Recall": MulticlassRecall(num_classes=num_classes, average=None)
+        }).to(device)
+        self.confusion_matrix = torch.DoubleTensor(num_classes, num_classes).zero_().to(device)
+        self.num_classes = num_classes
+    
+    def update(self, preds, target):
+        print("preds", preds)
+        print("target", target)
+        cm = multiclass_confusion_matrix(preds, target, num_classes=self.num_classes)
+        self.confusion_matrix = self.confusion_matrix.add(cm)
+        return self.metric_collection(preds, target)
+    
+    def reset_metrics(self):
+        self.metric_collection.reset()
+    
+    def accuracy(self):
+        return self.metric_collection["Accuracy"].compute().cpu().numpy()
+    
+    def recall(self):
+        return self.metric_collection["Recall"].compute().cpu().numpy()
+    
+    def precision(self):
         return self.metric_collection["Precision"].compute().cpu().numpy()
+    
     
 # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
@@ -302,10 +281,13 @@ def test(model, loader, metrics, device):
         inputs = inputs.to(device)
         labels = labels.to(device)
         outputs = model(inputs)
+        _, preds = torch.max(outputs, 1)
+        print("outputs", preds)
+        print("inputs", labels)
         m = 0
         model.eval()
         with torch.no_grad():
-            metrics_result = metrics.update(outputs, labels)
+            metrics_result = metrics.update(preds, labels)
         model.train()
         return metrics_result
 
@@ -329,21 +311,25 @@ criterion = nn.NLLLoss()
 optimizer = optim.SGD(model.fc.parameters(), lr=learning_rate, momentum=0.9)
 
 loss_history = []
+metrics = Metrics(num_classes, device)
 print('{:.2f}s'.format(time.time() - start))
 print('Processing...')
 for epoch in range(num_epochs):
-    metrics = MyMetrics(num_classes, device)
     start = time.time()
     epoch_loss = train(model, loader, optimizer, criterion, device)
     loss_history.append(epoch_loss)
     metrics_result = test(model, loader, metrics, device)
-    print('Epoch: {}\nPrecision: {:.3f}\nRecall: {:.3f}\nAccuracy: {:.3f}\nTime: {:.2f}s\n'.
+    '''print('Epoch: {}\nPrecision: {:.5f}\nRecall: {:.5f}\nAccuracy: {:.5f}\nTime: {:.2f}s\n'.
           format(epoch + 1, 
-                 metrics.precision().mean(), 
-                 metrics.recall().mean(), 
-                 metrics.accuracy().mean(), 
-                 time.time() - start))
-    
+                 metrics.precision(), 
+                 metrics.recall(), 
+                 metrics.accuracy(), 
+                 time.time() - start))'''
+    print("precision", metrics.precision()) 
+    print("recall", metrics.recall())
+    print("accuracy", metrics.accuracy())
+    if epoch != num_epochs - 1:
+        metrics.reset_metrics()
     
 # Plot the loss history
 plt.plot(loss_history)
