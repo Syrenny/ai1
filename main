@@ -21,6 +21,126 @@ from torchmetrics.classification import MulticlassStatScores
 from torchmetrics import MetricCollection
 from torchmetrics.classification import MulticlassAccuracy, MulticlassPrecision, MulticlassRecall, MulticlassFBetaScore, MulticlassConfusionMatrix
 from torchmetrics.functional.classification import multiclass_confusion_matrix, multiclass_stat_scores
+import seaborn as sns
+
+
+def heatmap(data, row_labels, col_labels, ax=None,
+            cbar_kw=None, cbarlabel="", **kwargs):
+    """
+    Create a heatmap from a numpy array and two lists of labels.
+
+    Parameters
+    ----------
+    data
+        A 2D numpy array of shape (M, N).
+    row_labels
+        A list or array of length M with the labels for the rows.
+    col_labels
+        A list or array of length N with the labels for the columns.
+    ax
+        A `matplotlib.axes.Axes` instance to which the heatmap is plotted.  If
+        not provided, use current axes or create a new one.  Optional.
+    cbar_kw
+        A dictionary with arguments to `matplotlib.Figure.colorbar`.  Optional.
+    cbarlabel
+        The label for the colorbar.  Optional.
+    **kwargs
+        All other arguments are forwarded to `imshow`.
+    """
+
+    if ax is None:
+        ax = plt.gca()
+
+    if cbar_kw is None:
+        cbar_kw = {}
+
+    # Plot the heatmap
+    im = ax.imshow(data, **kwargs)
+
+    # Create colorbar
+    cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
+    cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
+
+    # Show all ticks and label them with the respective list entries.
+    ax.set_xticks(np.arange(data.shape[1]), labels=col_labels)
+    ax.set_yticks(np.arange(data.shape[0]), labels=row_labels)
+
+    # Let the horizontal axes labeling appear on top.
+    ax.tick_params(top=True, bottom=False,
+                   labeltop=True, labelbottom=False)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=-30, ha="right",
+             rotation_mode="anchor")
+
+    # Turn spines off and create white grid.
+    ax.spines[:].set_visible(False)
+
+    ax.set_xticks(np.arange(data.shape[1]+1)-.5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
+    ax.grid(which="minor", color="w", linestyle='-', linewidth=3)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    return im, cbar
+
+
+def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
+                     textcolors=("black", "white"),
+                     threshold=None, **textkw):
+    """
+    A function to annotate a heatmap.
+
+    Parameters
+    ----------
+    im
+        The AxesImage to be labeled.
+    data
+        Data used to annotate.  If None, the image's data is used.  Optional.
+    valfmt
+        The format of the annotations inside the heatmap.  This should either
+        use the string format method, e.g. "$ {x:.2f}", or be a
+        `matplotlib.ticker.Formatter`.  Optional.
+    textcolors
+        A pair of colors.  The first is used for values below a threshold,
+        the second for those above.  Optional.
+    threshold
+        Value in data units according to which the colors from textcolors are
+        applied.  If None (the default) uses the middle of the colormap as
+        separation.  Optional.
+    **kwargs
+        All other arguments are forwarded to each call to `text` used to create
+        the text labels.
+    """
+
+    if not isinstance(data, (list, np.ndarray)):
+        data = im.get_array()
+
+    # Normalize the threshold to the images color range.
+    if threshold is not None:
+        threshold = im.norm(threshold)
+    else:
+        threshold = im.norm(data.max())/2.
+
+    # Set default alignment to center, but allow it to be
+    # overwritten by textkw.
+    kw = dict(horizontalalignment="center",
+              verticalalignment="center")
+    kw.update(textkw)
+
+    # Get the formatter in case a string is supplied
+    if isinstance(valfmt, str):
+        valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
+
+    # Loop over the data and create a `Text` for each "pixel".
+    # Change the text's color depending on the data.
+    texts = []
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            kw.update(color=textcolors[int(im.norm(data[i, j]) > threshold)])
+            text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+            texts.append(text)
+
+    return texts
 
 
 class MyDataset(Dataset):
@@ -40,29 +160,39 @@ class MyDataset(Dataset):
     
 class Metrics:
     def __init__(self, num_classes, device):
-        self.stat_scores = torch.DoubleTensor(5, num_classes).zero_().to(device)
+        self.stat_scores = torch.DoubleTensor(4, num_classes).zero_().to(device)
         self.confusion_matrix = torch.DoubleTensor(num_classes, num_classes).zero_().to(device)
         self.num_classes = num_classes
     
     def update(self, preds, target):
         cm = multiclass_confusion_matrix(preds, target, num_classes=self.num_classes)
         self.confusion_matrix = self.confusion_matrix.add(cm)
-        ss = multiclass_stat_scores(preds, target, self.num_classes, average=None)
-        self.stat_scores = self.stat_scores.add(ss)
+        ss = multiclass_stat_scores(preds, target, self.num_classes, average=None).transpose(0, 1) # every tp, tn,..., sup in different columns
+        self.stat_scores = self.stat_scores.add(ss[:4]) # except support column 
         
     def accuracy(self):
         # (tp + tn) / (tp + tn + fp + fn)
         numer = self.stat_scores[0].add(self.stat_scores[2])
-        denom = self.stat_scores.sum(1)
-        return numer.div(denom.sub(self.stat_scores[4])) # sub support 
+        denom = self.stat_scores.sum(0) # tp + tn + fp + fn
+        result = numer.div(denom) # sub support 
+        return np.nan_to_num(result.cpu().numpy())
     
     def recall(self):
         # tp / (tp + fn)
-        return self.stat_scores[0].div(self.stat_scores[0].add(self.stat_scores[3]))
+        result = self.stat_scores[0].div(self.stat_scores[0].add(self.stat_scores[3]))
+        return np.nan_to_num(result.cpu().numpy())
     
     def precision(self):
         # tp / (tp + fp)
-        return self.stat_scores[0].div(self.stat_scores[0].add(self.stat_scores[1]))
+        result = self.stat_scores[0].div(self.stat_scores[0].add(self.stat_scores[1]))
+        return np.nan_to_num(result.cpu().numpy())
+    
+    def get_confusion_matrix(self):
+        return self.confusion_matrix.cpu().numpy()
+    
+    def reset_metrics(self):
+        self.stat_scores = self.stat_scores.fill_(0)
+        self.confusion_matrix = self.confusion_matrix.fill_(0)
     
     
 # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
@@ -96,14 +226,13 @@ def load_dataset(transform, dataset, batch_size=32):
 
 
 def create_model():
-    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+    model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
     for param in model.parameters():
         param.requires_grad = False
     model.fc = nn.Sequential(
                    nn.Linear(2048, 128),
                    nn.ReLU(inplace=True),
-                   nn.Linear(128, num_classes), 
-                   nn.LogSoftmax(dim=1))
+                   nn.Linear(128, num_classes))
     return model
 
 
@@ -139,8 +268,9 @@ def test(model, loader, metrics, device):
 
 # Hyperparameters
 batch_size = 32
-num_epochs = 15
+num_epochs = 30
 learning_rate = 0.001
+
 # Load the dataset
 print("Data loading...")
 start = time.time()
@@ -152,7 +282,7 @@ loader, train_set, test_set = load_dataset(transform, dataset, batch_size=batch_
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = create_model().to(device)
 # Define the loss function and optimizer
-criterion = nn.NLLLoss()
+criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.fc.parameters(), lr=learning_rate, momentum=0.9)
 
 loss_history = []
@@ -166,20 +296,22 @@ for epoch in range(num_epochs):
     metrics_result = test(model, loader, metrics, device)
     print('Epoch: {}\nPrecision: {:.5f}\nRecall: {:.5f}\nAccuracy: {:.5f}\nTime: {:.2f}s\n'.
           format(epoch + 1, 
-                 metrics.precision().cpu().numpy().mean(), 
-                 metrics.recall().cpu().numpy().mean(), 
-                 metrics.accuracy().cpu().numpy().mean(), 
+                 metrics.precision().mean(), 
+                 metrics.recall().mean(), 
+                 metrics.accuracy().mean(), 
                  time.time() - start))
     if epoch != num_epochs - 1:
         metrics.reset_metrics()
     
+torch.save(model, "mymodel.pth")
 # Plot the loss history
 plt.plot(loss_history)
 plt.title('Training Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 # metrics.display_heatmap(name_classes)
+fig, ax = plt.subplots()
+cm = pd.DataFrame(metrics.get_confusion_matrix(), index=name_classes, columns=name_classes)
+sns.heatmap(cm, ax=ax)
 plt.show()
-
-
 
